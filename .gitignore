@@ -26,33 +26,3 @@ var/
 # Dev
 venv
 
-block_sparse_tests/test_correctness/bwd_test/log/*
-block_sparse_tests/test_correctness/fwd_test/log/*
-block_sparse_tests/test_correctness/full_test/log/*
-block_sparse_tests/test_correctness/bwd_test/log/
-block_sparse_tests/test_correctness/fwd_test/log/
-block_sparse_tests/test_correctness/full_test/log/
-block_sparse_tests/test_correctness/full_test/log3.txt
-block_sparse_tests/test_correctness/full_test/test
-block_sparse_tests/test_correctness/full_test/test.cpp
-block_sparse_tests/test_correctness/full_test/tmp.txt
-block_sparse_tests/test_correctness/full_test/tmp2.txt
-block_sparse_tests/test_correctness/full_test/arxiv/block_bwd.cu
-block_sparse_tests/test_correctness/full_test/arxiv/block.cu
-block_sparse_tests/test_correctness/full_test/arxiv/mask_compress.ipynb
-block_sparse_tests/test_correctness/full_test/arxiv/tmp.py
-block_sparse_tests/test_performance/fwd_test/log_0013.txt
-block_sparse_tests/test_performance/fwd_test/log_split_mask_process_all_sparse_a11.txt
-block_sparse_tests/test_performance/fwd_test/log_split_mask_process_all_sparse_l21.txt
-block_sparse_tests/test_performance/fwd_test/log_split_mask_process_l21.txt
-block_sparse_tests/test_performance/fwd_test/log_using_olog_all_dense_l21.txt
-block_sparse_tests/test_performance/fwd_test/log_using_olog_l21.txt
-block_sparse_tests/test_performance/fwd_test/fig/hdim128_nheads32_bts1_fwd.png
-block_sparse_tests/test_performance/fwd_test/fig/hdim128_nheads32_bts1_fwd.png
-block_sparse_tests/test_performance/fwd_test/fig/streaming/hdim128_nheads32_bts1_sink1_local3_fwd.png
-block_sparse_tests/test_performance/fwd_test/old_fig/hdim128_nheads32_bts8_fwd.png
-block_sparse_tests/test_performance/fwd_test/old_fig/hdim128_nheads32_bts1_fwd.png
-
-
-*.xlsx
-
