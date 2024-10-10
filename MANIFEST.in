@@ -1,0 +1,11 @@
+recursive-include csrc *.cu
+recursive-include csrc *.h
+recursive-include csrc *.cuh
+recursive-include csrc *.cpp
+recursive-include csrc *.hpp
+
+recursive-include block_flash_attn *.cu
+recursive-include block_flash_attn *.h
+recursive-include block_flash_attn *.cuh
+recursive-include block_flash_attn *.cpp
+recursive-include block_flash_attn *.hpp
