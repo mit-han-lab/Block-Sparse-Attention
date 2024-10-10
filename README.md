@@ -170,7 +170,13 @@ To run the performance tests:
 
 ## Team
 
-- Junxian Guo, developer
+| | |
+| --- | --- |
+[Junxian Guo](https://github.com/JerryGJX): SJTU, MIT|  [Haotian Tang](http://kentang.net/): MIT
+[Shang Yang](https://ys-2020.github.io/): MIT        |  [Zhekai Zhang](https://hanlab.mit.edu/team/zhekai-zhang): MIT
+[Zhijian Liu](https://zhijianliu.com/): Nvidia, MIT  |  [Song Han](https://hanlab.mit.edu/songhan): Nvidia, MIT
+
+
 
 ## Acknowledgement
 
