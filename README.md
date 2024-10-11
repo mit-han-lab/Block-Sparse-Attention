@@ -104,11 +104,10 @@ The figures above illustrate the speedup gained by using Block Sparse Attention 
 
 ### Dense & Streaming Hybrid Speedup
 
-[Duo Attention](https://github.com/mit-han-lab/duo-attention) introduces a hybrid mask scenario, where half of the attention heads utilize a dense mask and the other half employ a streaming mask. This pattern is also proved to be an accurate approach for LLMs inference.
 
 <div align=center><img src="assets/StreamingHybridSpeedUpRatio.jpeg"></div>
 
-The graph above demonstrates the performance of our kernel for this specified workload. For token-level streaming masks, we allocate 64 sink tokens and 256 local tokens. For block-level streaming masks, we allocate 1 sink block and 3 local blocks, with each block consisting of 128 tokens. Speedup results were measured on an A100 GPU, using dense FlashAttention2 as the baseline, with a head dimension of 128, 32 attention heads, and a batch size of 1.
+The graph above demonstrates the performance of our kernel for a hybrid mask scenario, where half of the attention heads utilize a dense mask and the other half employ a streaming mask. For token-level streaming masks, we allocate 64 sink tokens and 256 local tokens. For block-level streaming masks, we allocate 1 sink block and 3 local blocks, with each block consisting of 128 tokens. Speedup results were measured on an A100 GPU, using dense FlashAttention2 as the baseline, with a head dimension of 128, 32 attention heads, and a batch size of 1.
 
 ## Installation
 
@@ -183,6 +182,18 @@ To run the performance tests:
 - [FlashAttention](https://github.com/Dao-AILab/flash-attention): the codebase we built upon. Thanks for their wonderful work. The design of block sparse attention in FlashAttention v1.0 is very inspiring.
 - [FlashAttention](https://arxiv.org/abs/2205.14135), [FlashAttention-2](https://arxiv.org/abs/2307.08691), [Big Bird](https://arxiv.org/abs/2007.14062), [ETC](https://arxiv.org/abs/2004.08483): get the idea of block sparse attention and how it can be implemented.
 - [StreamingLLM](https://arxiv.org/abs/2309.17453): get the idea of streaming attention.
-- [Duo Attention](https://github.com/mit-han-lab/duo-attention), [MInference 1.0](https://arxiv.org/abs/2407.02490): get the idea of hybrid masks.
+- [MInference 1.0](https://arxiv.org/abs/2407.02490): get the idea of hybrid masks.
 
 ## Citation
+
+```
+@misc{guo2024blocksparse,
+  author       = {Guo, Junxian and Tang, Haotian and Yang, Shang and Zhang, Zhekai and Liu, Zhijian and Han, Song},
+  title        = {{Block Sparse Attention}},
+  year         = {2024},
+  publisher    = {GitHub},
+  journal      = {GitHub repository},
+  howpublished = {\url{https://github.com/mit-han-lab/Block-Sparse-Attention}}
+}
+
+```
