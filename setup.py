@@ -36,7 +36,7 @@ this_dir = os.path.dirname(os.path.abspath(__file__))
 PACKAGE_NAME = "block_sparse_attn"
 
 BASE_WHEEL_URL = (
-    "https://github.com/Dao-AILab/flash-attention/releases/download/{tag_name}/{wheel_name}"
+    "https://github.com/mit-han-lab/Block-Sparse-Attention/releases/download/{tag_name}/{wheel_name}"
 )
 
 # FORCE_BUILD: Force a fresh build locally, instead of attempting to find prebuilt wheels
