@@ -927,7 +927,7 @@ inline __device__ void compute_block_attn_1rowblock(const Params &params, const 
             __syncthreads();
             if (n_block > n_block_min && !is_last_block) {
                 // Advance gK
-                tKgK.data() = tKgK.data() + (-int(kBlockN * leap * params.k_row_stride));
+                tKgK.data() = tKgK.data() + (-index_t(kBlockN * leap * params.k_row_stride));
                 flash::copy</*Is_even_MN=*/true, Is_even_K>(gmem_tiled_copy_QKV, tKgK, tKsK, tKVcKV, tKVpKV);
                 cute::cp_async_fence();
             }
@@ -944,7 +944,7 @@ inline __device__ void compute_block_attn_1rowblock(const Params &params, const 
             // int block_col_idx = n_block * (kBlockN / 32);
             
             if (Return_softmax) {
-                tPgP.data() = tPgP.data() + (-int(kBlockN * leap));
+                tPgP.data() = tPgP.data() + (-index_t(kBlockN * leap));
             }   
             // This check is at the end of the loop since we always have at least 1 iteration
             if (n_masking_steps > 1 && n_block <= n_block_min) {
@@ -1020,7 +1020,7 @@ inline __device__ void compute_block_attn_1rowblock(const Params &params, const 
             __syncthreads();
             if (n_block > n_block_min && !is_last_block) {
                 // Advance gK
-                tKgK.data() = tKgK.data() + (-int(kBlockN * leap * params.k_row_stride));
+                tKgK.data() = tKgK.data() + (-index_t(kBlockN * leap * params.k_row_stride));
                 flash::copy</*Is_even_MN=*/true, Is_even_K>(gmem_tiled_copy_QKV, tKgK, tKsK, tKVcKV, tKVpKV);
                 // This cp_async_fence needs to be in the if block, otherwise the synchronization
                 // isn't right and we get race conditions.
@@ -1053,7 +1053,7 @@ inline __device__ void compute_block_attn_1rowblock(const Params &params, const 
                 // if (!is_last_block) {
                 //     tPgP.data() = tPgP.data() + (-int(kBlockN * leap));
                 // }
-                tPgP.data() = tPgP.data() + (-int(kBlockN * leap));
+                tPgP.data() = tPgP.data() + (-index_t(kBlockN * leap));
             }
             if (Is_dropout) {
                 flash::apply_dropout(tOrP, params.p_dropout_in_uint8_t, seed, offset,
@@ -1112,7 +1112,7 @@ inline __device__ void compute_block_attn_1rowblock(const Params &params, const 
         flash::cp_async_wait<0>();
         __syncthreads();
         // Advance gV
-        tVgV.data() = tVgV.data() + (-int(kBlockN * leap * params.v_row_stride));
+        tVgV.data() = tVgV.data() + (-index_t(kBlockN * leap * params.v_row_stride));
 
         flash::copy</*Is_even_MN=*/true, Is_even_K>(gmem_tiled_copy_QKV, tVgV, tVsV, tKVcKV, tKVpKV);
         cute::cp_async_fence();
@@ -1129,7 +1129,7 @@ inline __device__ void compute_block_attn_1rowblock(const Params &params, const 
 
         if (!is_last_block) {
             // Advance gK
-            tKgK.data() = tKgK.data() + (-int(kBlockN * leap * params.k_row_stride));
+            tKgK.data() = tKgK.data() + (-index_t(kBlockN * leap * params.k_row_stride));
 
             flash::copy</*Is_even_MN=*/true, Is_even_K>(gmem_tiled_copy_QKV, tKgK, tKsK, tKVcKV, tKVpKV);
             cute::cp_async_fence();
@@ -1167,7 +1167,7 @@ inline __device__ void compute_block_attn_1rowblock(const Params &params, const 
                 block_row_idx, block_col_idx, kNWarps
             );
             flash::write_softmax_to_gmem(tOrP_copy, tPgP, gmem_tiled_copy_P);
-            tPgP.data() = tPgP.data() + (-int(kBlockN * leap));
+            tPgP.data() = tPgP.data() + (-index_t(kBlockN * leap));
         }
         if (Is_dropout) {
             flash::apply_dropout(tOrP, params.p_dropout_in_uint8_t, seed, offset,
