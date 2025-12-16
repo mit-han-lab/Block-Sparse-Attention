@@ -7,7 +7,8 @@
 
 #include "utils.h"
 
-namespace flash {
+#include "namespace_config.h"
+namespace FLASH_NAMESPACE {
 
 using namespace cute;
 
@@ -59,4 +60,4 @@ inline __device__ void apply_alibi(Tensor<Engine, Layout> &tensor,
     }
 }
 
-}  // namespace flash
+}  // namespace FLASH_NAMESPACE

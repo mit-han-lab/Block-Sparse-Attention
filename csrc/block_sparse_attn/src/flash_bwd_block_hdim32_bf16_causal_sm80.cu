@@ -8,8 +8,8 @@
 namespace FLASH_NAMESPACE {
 
 template<>
-void run_mha_bwd_block_<cutlass::half_t, 128, false>(Flash_bwd_params &params, cudaStream_t stream) {
-    run_mha_bwd_block_hdim128<cutlass::half_t, false>(params, stream);
+void run_mha_bwd_block_<cutlass::bfloat16_t, 32, true>(Flash_bwd_params &params, cudaStream_t stream) {
+    run_mha_bwd_block_hdim32<cutlass::bfloat16_t, true>(params, stream);
 }
 
 } // namespace FLASH_NAMESPACE

@@ -4,7 +4,8 @@
 
 #pragma once
 
-namespace flash {
+#include "namespace_config.h"
+namespace FLASH_NAMESPACE {
 
 class fwdIteratorBase{
 };
@@ -420,4 +421,4 @@ struct bwdIterator<true>: public bwdStreaming{
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-}  // namespace flash
+}  // namespace FLASH_NAMESPACE

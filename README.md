@@ -2,13 +2,25 @@
 
 As prompt lengths continue to increase, the computational and memory bandwidth demands of Large Language Models (LLMs) grow significantly, making efficient processing more challenging. However, by fully leveraging the inherent sparsity in attention patterns, we can optimize the model’s performance, effectively reducing inference costs in computation. This approach not only enhances the efficiency of LLMs but also enables them to handle longer and more complex prompts without a proportional increase in resource consumption. To this end, we introduce Block Sparse Attention, a library of sparse attention kernels that supports various sparse patterns, including streaming attention with token granularity, streaming attention with block granularity, and block-sparse attention. By incorporating these patterns, Block Sparse Attention can significantly reduce the computational costs of LLMs, thereby enhancing their efficiency and scalability.
 
-We release the implementation of Block Sparse Attention, which is modified base on [FlashAttention](https://github.com/Dao-AILab/flash-attention) 2.4.2.
+We release the implementation of Block Sparse Attention, which is initially modified base on [FlashAttention](https://github.com/Dao-AILab/flash-attention) 2.4.2.
 
 ![Sparse Patterns](assets/BlockSparseMaskDemo.jpeg)
 
 ## News
 
+- [2025/12] We updated the implementation:
+  - Support running on Hopper (H100) and Blackwell (B200) GPUs.
+  - Clean up Flash Attention supported features.
+  - Optimize compilation speed, following Flash Attention 2.8.3.
+  - Improve code quality for performance profiling tests.
+
 - [2024/10] We release both fwd pass and bwd pass of Block Sparse Attention.
+
+## Todos
+- [2025/12] 
+  - [ ] Update code implementation and CUTLASS version to align with FlashAttention 2.8.3.
+  - [ ] Refactor internal kernel structure to reduce register pressure.
+  - [ ] Optimize block mask storage mechanism to lower peak memory usage.
 
 ## Features
 
@@ -184,6 +196,14 @@ To run the performance tests:
 - [FlashAttention](https://arxiv.org/abs/2205.14135), [FlashAttention-2](https://arxiv.org/abs/2307.08691), [Big Bird](https://arxiv.org/abs/2007.14062), [ETC](https://arxiv.org/abs/2004.08483): get the idea of block sparse attention and how it can be implemented.
 - [StreamingLLM](https://arxiv.org/abs/2309.17453): get the idea of streaming attention.
 - [Duo Attention](https://github.com/mit-han-lab/duo-attention), [MInference 1.0](https://arxiv.org/abs/2407.02490): get the idea of hybrid masks.
+
+## Related Projects
+
+- [DuoAttention](https://arxiv.org/abs/2410.10819): Efficient Long-Context LLM Inference with Retrieval and Streaming Heads
+- [LServe](https://arxiv.org/abs/2502.14866): Efficient Long-sequence LLM Serving with Unified Sparse Attention
+- [XAttention](https://arxiv.org/abs/2508.11131): Block sparse attention with antidiagonal scoring
+
+
 
 ## Citation
 

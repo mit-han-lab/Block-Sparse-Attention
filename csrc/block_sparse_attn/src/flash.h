@@ -7,17 +7,16 @@
 
 #pragma once
 
+#include "namespace_config.h"
+
 #include <cuda.h>
 #include <vector>
 
-#ifdef OLD_GENERATOR_PATH
-#include <ATen/CUDAGeneratorImpl.h>
-#else
-#include <ATen/cuda/CUDAGeneratorImpl.h>
-#endif
+#include <ATen/cuda/CUDAGeneratorImpl.h> // For at::Generator and at::PhiloxCudaState
 
 #include <ATen/cuda/CUDAGraphsUtils.cuh> // For at::cuda::philox::unpack
 
+namespace FLASH_NAMESPACE {
 constexpr int TOTAL_DIM = 0;
 constexpr int H_DIM = 1;
 constexpr int D_DIM = 2;
@@ -70,7 +69,7 @@ struct Flash_fwd_params : public Qkv_params {
     void * __restrict__ softmax_lseaccum_ptr;
 
     // The dimensions.
-    int b, seqlen_q, seqlen_k, seqlen_knew, d, seqlen_q_rounded, seqlen_k_rounded, d_rounded, rotary_dim;
+    int b, seqlen_q, seqlen_k, seqlen_knew, d, seqlen_q_rounded, seqlen_k_rounded, d_rounded, rotary_dim, total_q;
 
     // The scaling factors for the kernel.
     float scale_softmax;
@@ -106,7 +105,7 @@ struct Flash_fwd_params : public Qkv_params {
     void * __restrict__ rotary_sin_ptr;
 
     // The indices to index into the KV cache.
-    int *__restrict__ cache_batch_idx;
+    int * __restrict__ cache_batch_idx;
 
     // The dropout probability (probability of keeping an activation).
     float p_dropout;
@@ -187,10 +186,8 @@ struct Flash_bwd_params : public Flash_fwd_params {
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-template<typename T, int Headdim> void run_mha_fwd_(Flash_fwd_params &params, cudaStream_t stream);
-template<typename T, int Headdim> void run_mha_fwd_splitkv_dispatch(Flash_fwd_params &params, cudaStream_t stream);
 
-template<typename T, int Headdim> void run_mha_bwd_(Flash_bwd_params &params, cudaStream_t stream, const bool configure);
+template<typename T, int Headdim, bool Is_causal> void run_mha_fwd_block_(Flash_fwd_params &params, cudaStream_t stream);
+template<typename T, int Headdim, bool Is_causal> void run_mha_bwd_block_(Flash_bwd_params &params, cudaStream_t stream);
 
-template<typename T, int Headdim> void run_mha_fwd_block_(Flash_fwd_params &params, cudaStream_t stream);
-template<typename T, int Headdim> void run_mha_bwd_block_(Flash_bwd_params &params, cudaStream_t stream, const bool configure);
+}  // namespace FLASH_NAMESPACE

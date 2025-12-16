@@ -3,6 +3,39 @@
 import block_sparse_attn_cuda
 import torch
 import torch.nn as nn
+from typing import Optional, Tuple
+
+
+def _get_block_size(device, head_dim, is_dropout, is_causal):
+    # This should match the block sizes in the CUDA kernel
+    assert head_dim <= 256
+    major, minor = torch.cuda.get_device_capability(device)
+    is_sm8x = major == 8 and minor > 0  # Only include sm86 and sm89, exclude sm80 (A100)
+    is_sm80 = major == 8 and minor == 0
+    is_sm90 = major == 9 and minor == 0
+    if head_dim <= 32:
+        return 128, 128
+    if head_dim <= 64:
+        return (128, 128) if not is_dropout else (128, 64)
+    elif head_dim <= 96:
+        return (64, 64) if (is_sm8x and is_causal) else (128, 64)
+    elif head_dim <= 128:
+        if is_sm8x:
+            return (64, 64) if (not is_dropout and is_causal) else (128, 32)
+        else:
+            return 128, (64 if not is_dropout else 32)
+    elif head_dim <= 160:
+        if is_sm8x:
+            return (128, 64) if not is_causal else (64, 64)
+        else:
+            return 128, 32
+    elif head_dim <= 192:
+        return (128, 64) if not is_dropout else (64, 64)
+    elif head_dim <= 224:
+        return (128, 64) if (is_sm80 or is_sm90) else (64, 64)
+    elif head_dim <= 256:
+        return (128, 64) if is_sm80 else (64, 64)
+    
 
 
 def convert_blockmask(blockmask, causal):
@@ -79,26 +112,63 @@ def replace_ones_with_count(tensor):
     return tensor, ones_num
 
 
+def maybe_contiguous(x):
+    return x.contiguous() if x is not None and x.stride(-1) != 1 else x
+
+
+def round_multiple(x, m):
+    return (x + m - 1) // m * m
+
+
+# torch.compile() support is only enabled for pytorch >= 2.4
+# The reason for this is that we are using the new custom_op and register_fake
+# APIs, which support inplace modification of inputs in the function itself
+if torch.__version__ >= "2.4.0":
+    _torch_custom_op_wrapper = torch.library.custom_op
+    _torch_register_fake_wrapper = torch.library.register_fake
+else:
+    def noop_custom_op_wrapper(name, fn=None, /, *, mutates_args, device_types=None, schema=None):
+        def wrap(func):
+            return func
+        if fn is None:
+            return wrap
+        return fn
+    def noop_register_fake_wrapper(op, fn=None, /, *, lib=None, _stacklevel=1):
+        def wrap(func):
+            return func
+        if fn is None:
+            return wrap
+        return fn
+    _torch_custom_op_wrapper = noop_custom_op_wrapper
+    _torch_register_fake_wrapper = noop_register_fake_wrapper
+
+
+@_torch_custom_op_wrapper("flash_attn::_block_sparse_attn_forward", mutates_args=(), device_types="cuda")
 def _block_sparse_attn_forward(
-    q, k, v,
-    cu_seqlens_q, cu_seqlens_k,
-    m_block_dim, n_block_dim,
-    head_mask_type,
-    streaming_info,
-    row_blockmask,
-    max_seqlen_q_, max_seqlen_k_,
-    p_dropout,
-    softmax_scale,
-    is_causal,
-    exact_streaming,
-    return_softmax,
-    window_size_left,
-    window_size_right
-):
-    out, q, k, v, out_padded, softmax_lse, S_dmask, rng_state = block_sparse_attn_cuda.fwd_block(
+    q: torch.Tensor,
+    k: torch.Tensor,
+    v: torch.Tensor,
+    cu_seqlens_q: torch.Tensor,
+    cu_seqlens_k: torch.Tensor,
+    m_block_dim: int,
+    n_block_dim: int,
+    head_mask_type: torch.Tensor,
+    streaming_info: torch.Tensor,
+    row_blockmask: Optional[torch.Tensor],
+    max_seqlen_q_: int,
+    max_seqlen_k_: int,
+    p_dropout: float,
+    softmax_scale: float,
+    is_causal: bool,
+    exact_streaming: bool,
+    return_softmax: bool,
+    window_size_left: int,
+    window_size_right: int
+) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    q, k, v = [maybe_contiguous(x) for x in (q, k, v)]
+    out, softmax_lse, S_dmask, rng_state = block_sparse_attn_cuda.fwd_block(
         q, k, v,
         cu_seqlens_q, cu_seqlens_k,
-        m_block_dim, n_block_dim,
         head_mask_type,
         streaming_info,
         row_blockmask,
@@ -106,36 +176,89 @@ def _block_sparse_attn_forward(
         p_dropout,
         softmax_scale,
         is_causal,
-        exact_streaming,
-        return_softmax,
         window_size_left,
         window_size_right, 
+        m_block_dim, n_block_dim,
+        exact_streaming,
+        return_softmax,
         None
     )
-    return out, q, k, v, out_padded, softmax_lse, S_dmask, rng_state
+    return out, softmax_lse, S_dmask, rng_state
 
 
+@_torch_register_fake_wrapper("flash_attn::_block_sparse_attn_forward")
+def _block_sparse_attn_forward_fake(
+    q: torch.Tensor,
+    k: torch.Tensor,
+    v: torch.Tensor,
+    cu_seqlens_q: torch.Tensor,
+    cu_seqlens_k: torch.Tensor,
+    m_block_dim: int,
+    n_block_dim: int,
+    head_mask_type: torch.Tensor,
+    streaming_info: torch.Tensor,
+    row_blockmask: Optional[torch.Tensor],
+    max_seqlen_q_: int,
+    max_seqlen_k_: int,
+    p_dropout: float,
+    softmax_scale: float,
+    is_causal: bool,
+    exact_streaming: bool,
+    return_softmax: bool,
+    window_size_left: int,
+    window_size_right: int
+) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    q, k, v = [maybe_contiguous(x) for x in (q, k, v)]
+    total_q, num_heads, _ = q.shape
+    out = torch.empty_like(q)
+    batch_size = cu_seqlens_q.shape[0] - 1
+    max_seqlen_q_rounded = round_multiple(max_seqlen_q_, 128)
+    max_seqlen_k_rounded = round_multiple(max_seqlen_k_, 128)
+    softmax_lse = torch.empty((batch_size, num_heads, max_seqlen_q_rounded), dtype=torch.float32, device=q.device, layout=q.layout)
+    p = torch.empty((0,), dtype=q.dtype, device=q.device, layout=q.layout)
+    if return_softmax:
+        p = torch.empty((batch_size, num_heads, max_seqlen_q_rounded, max_seqlen_k_rounded), dtype=q.dtype, device=q.device, layout=q.layout)
+
+    rng_state = torch.empty((2,), dtype=torch.int64, device=q.device)
+    return out, softmax_lse, p, rng_state
+
+
+if torch.__version__ >= "2.4.0":
+    _wrapped_block_sparse_attn_forward = torch.ops.flash_attn._block_sparse_attn_forward
+else:
+    _wrapped_block_sparse_attn_forward = _block_sparse_attn_forward
+
+
+@_torch_custom_op_wrapper("flash_attn::_block_sparse_attn_backward", mutates_args=("dq", "dk", "dv"), device_types="cuda")
 def _block_sparse_attn_backward(
-    dout,
-    q, k, v,
-    out,
-    softmax_lse,
-    dq, dk, dv,
-    cu_seqlens_q, cu_seqlens_k,
-    m_block_dim, n_block_dim,
-    head_mask_type,
-    streaming_info,
-    col_blockmask,
-    max_seqlen_q_, max_seqlen_k_,
-    p_dropout,
-    softmax_scale,
-    zero_tensors,
-    is_causal,
-    window_size_left,
-    window_size_right,
-    deterministic,
-    rng_state=None,
-):
+    dout: torch.Tensor,
+    q: torch.Tensor,
+    k: torch.Tensor,
+    v: torch.Tensor,
+    out: torch.Tensor,
+    softmax_lse: torch.Tensor,
+    dq: torch.Tensor,
+    dk: torch.Tensor,
+    dv: torch.Tensor,
+    cu_seqlens_q: torch.Tensor,
+    cu_seqlens_k: torch.Tensor,
+    m_block_dim: int,
+    n_block_dim: int,
+    head_mask_type: torch.Tensor,
+    streaming_info: torch.Tensor,
+    col_blockmask: torch.Tensor,
+    max_seqlen_q_: int,
+    max_seqlen_k_: int,
+    p_dropout: float,
+    softmax_scale: float,
+    zero_tensors: bool,
+    is_causal: bool,
+    window_size_left: int,
+    window_size_right: int,
+    deterministic: bool,
+    rng_state: Optional[torch.Tensor] = None,
+) -> torch.Tensor:
+    dout, q, k, v, out = [maybe_contiguous(x) for x in (dout, q, k, v, out)]
     dq, dk, dv, softmax_d = block_sparse_attn_cuda.bwd_block(
         dout,
         q, k, v,
@@ -143,7 +266,6 @@ def _block_sparse_attn_backward(
         softmax_lse,
         dq, dk, dv,
         cu_seqlens_q, cu_seqlens_k,
-        m_block_dim, n_block_dim,
         head_mask_type,
         streaming_info,
         col_blockmask,
@@ -154,117 +276,57 @@ def _block_sparse_attn_backward(
         is_causal,
         window_size_left,
         window_size_right,
+        m_block_dim, n_block_dim,
         deterministic,
         None, rng_state
     )
-    return dq, dk, dv, softmax_d
+    return softmax_d
 
 
-class BlockSparseAttnFun(torch.autograd.Function):
-    @staticmethod
-    def forward(ctx,
-                q, k, v,
-                cu_seqlens_q, cu_seqlens_k,
-                m_block_dim, n_block_dim,
-                head_mask_type,
-                streaming_info,
-                base_blockmask,
-                max_seqlen_q_, max_seqlen_k_,
-                p_dropout,
-                softmax_scale,
-                is_causal,
-                exact_streaming,
-                return_softmax,
-                window_size_left,
-                window_size_right, deterministic=False):
-        # Save rng_state because the backward pass will regenerate the dropout mask
-        if softmax_scale is None:
-            softmax_scale = q.shape[-1] ** (-0.5)
-        if base_blockmask is not None:
-            row_blockmask = convert_blockmask_row_reverse(base_blockmask, is_causal)
-        else:
-            row_blockmask = None
-        
-        if exact_streaming:
-            assert streaming_info is not None
-            assert is_causal
-        
-        out, q, k, v, out_padded, softmax_lse, S_dmask, rng_state = _block_sparse_attn_forward(
-            q, k, v,
-            cu_seqlens_q, cu_seqlens_k,
-            m_block_dim, n_block_dim,
-            head_mask_type,
-            streaming_info,
-            row_blockmask,
-            max_seqlen_q_, max_seqlen_k_,
-            p_dropout,
-            softmax_scale,
-            is_causal,
-            exact_streaming,
-            return_softmax=False,
-            window_size_left=window_size_left,
-            window_size_right=window_size_right
-        )
-        ctx.save_for_backward(q, k, v,
-                              out, S_dmask, softmax_lse,
-                              cu_seqlens_q, cu_seqlens_k,
-                              head_mask_type,
-                              streaming_info,
-                              base_blockmask,
-                              rng_state)
-        # ctx.is_blocksparse = is_blocksparse
-        ctx.m_block_dim = m_block_dim
-        ctx.n_block_dim = n_block_dim
-        ctx.window_size_left = window_size_left
-        ctx.window_size_right = window_size_right
-        ctx.max_seqlen_q_ = max_seqlen_q_
-        ctx.max_seqlen_k_ = max_seqlen_k_
-        ctx.p_dropout = p_dropout
-        ctx.softmax_scale = softmax_scale
-        ctx.is_causal = is_causal
-        ctx.exact_streaming = exact_streaming
-        ctx.deterministic = deterministic
-        return out
-
-    @staticmethod
-    def backward(ctx, dout):
-        q, k, v, out, S_dmask, softmax_lse, cu_seqlens_q, cu_seqlens_k, head_mask_type, streaming_info, base_blockmask, rng_state = ctx.saved_tensors
-        dq, dk, dv = torch.empty_like(q), torch.empty_like(k), torch.empty_like(v)
-        # S_dmask is None, temporarily use another tensor just to get it running
-        if base_blockmask is not None:
-            col_blockmask = convert_blockmask_col_reverse(base_blockmask, ctx.is_causal)
-        else:
-            col_blockmask = None
-            
-        assert not ctx.exact_streaming, "Exact streaming not supported in backward pass"
-            
-        _block_sparse_attn_backward(
-            dout,
-            q, k, v,
-            out,
-            softmax_lse,
-            dq, dk, dv,
-            cu_seqlens_q, cu_seqlens_k,
-            ctx.m_block_dim, ctx.n_block_dim,
-            head_mask_type,
-            streaming_info,
-            col_blockmask,
-            ctx.max_seqlen_q_, ctx.max_seqlen_k_,
-            ctx.p_dropout,
-            ctx.softmax_scale,
-            True,  # zero_tensors
-            ctx.is_causal,
-            ctx.window_size_left,
-            ctx.window_size_right,
-            ctx.deterministic,
-            rng_state=rng_state
-        )
-        return dq, dk, dv, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None
+@_torch_register_fake_wrapper("flash_attn::_block_sparse_attn_backward")
+def _block_sparse_attn_backward_fake(
+    dout: torch.Tensor,
+    q: torch.Tensor,
+    k: torch.Tensor,
+    v: torch.Tensor,
+    out: torch.Tensor,
+    softmax_lse: torch.Tensor,
+    dq: torch.Tensor,
+    dk: torch.Tensor,
+    dv: torch.Tensor,
+    cu_seqlens_q: torch.Tensor,
+    cu_seqlens_k: torch.Tensor,
+    m_block_dim: int,
+    n_block_dim: int,
+    head_mask_type: torch.Tensor,
+    streaming_info: torch.Tensor,
+    col_blockmask: torch.Tensor,
+    max_seqlen_q_: int,
+    max_seqlen_k_: int,
+    p_dropout: float,
+    softmax_scale: float,
+    zero_tensors: bool,
+    is_causal: bool,
+    window_size_left: int,
+    window_size_right: int,
+    deterministic: bool,
+    rng_state: Optional[torch.Tensor] = None,
+) -> torch.Tensor:
+    total_q, num_heads, _ = q.shape
+    batch_size = cu_seqlens_q.shape[0] - 1
+    max_seqlen_q_rounded = round_multiple(max_seqlen_q_, 128)
+    max_seqlen_k_rounded = round_multiple(max_seqlen_k_, 128)
+    softmax_d = torch.empty((batch_size, num_heads, max_seqlen_q_rounded), device=q.device, dtype=torch.float32)
+    return softmax_d
 
 
-# We duplicate code to return both the output and the softmax for testing
-# Returning both makes backward a bit slower, so we want to keep using the other version for speed.
-class BlockSparseAttnFunWithS(torch.autograd.Function):
+if torch.__version__ >= "2.4.0":
+    _wrapped_block_sparse_attn_backward = torch.ops.flash_attn._block_sparse_attn_backward
+else:
+    _wrapped_block_sparse_attn_backward = _block_sparse_attn_backward
+
+
+class BlockSparseAttnFunc(torch.autograd.Function):
     @staticmethod
     def forward(ctx,
                 q, k, v,
@@ -281,21 +343,29 @@ class BlockSparseAttnFunWithS(torch.autograd.Function):
                 return_softmax,
                 window_size_left,
                 window_size_right,
-                deterministic=False):
+                deterministic=False,
+                is_grad_enabled=False):
         # Save rng_state because the backward pass will regenerate the dropout mask
+        is_grad = is_grad_enabled and any(
+            x.requires_grad for x in [q, k, v]
+        )
         if softmax_scale is None:
             softmax_scale = q.shape[-1] ** (-0.5)
+        head_size_og = q.size(2)
+        if head_size_og % 8 != 0:
+            q = torch.nn.functional.pad(q, [0, 8 - head_size_og % 8])
+            k = torch.nn.functional.pad(k, [0, 8 - head_size_og % 8])
+            v = torch.nn.functional.pad(v, [0, 8 - head_size_og % 8])
         if base_blockmask is not None:
             row_blockmask = convert_blockmask_row_reverse(base_blockmask, is_causal)
         else:
             row_blockmask = None
-            
+        
         if exact_streaming:
             assert streaming_info is not None
-            print("is_causal: ", is_causal)
             assert is_causal
         
-        out, q, k, v, out_padded, softmax_lse, S_dmask, rng_state = _block_sparse_attn_forward(
+        out, softmax_lse, S_dmask, rng_state = _wrapped_block_sparse_attn_forward(
             q, k, v,
             cu_seqlens_q, cu_seqlens_k,
             m_block_dim, n_block_dim,
@@ -309,45 +379,48 @@ class BlockSparseAttnFunWithS(torch.autograd.Function):
             exact_streaming,
             return_softmax=return_softmax and p_dropout > 0,
             window_size_left=window_size_left,
-            window_size_right=window_size_right,
+            window_size_right=window_size_right
         )
-        
-        ctx.save_for_backward(q, k, v,
-                              out, softmax_lse,
-                              cu_seqlens_q, cu_seqlens_k,
-                              head_mask_type,
-                              streaming_info,
-                              base_blockmask,
-                              rng_state)
-        # ctx.is_blocksparse = is_blocksparse
-        ctx.m_block_dim = m_block_dim
-        ctx.n_block_dim = n_block_dim
-        ctx.window_size_left = window_size_left
-        ctx.window_size_right = window_size_right
-        ctx.max_seqlen_q_ = max_seqlen_q_
-        ctx.max_seqlen_k_ = max_seqlen_k_
-        ctx.p_dropout = p_dropout
-        ctx.softmax_scale = softmax_scale
-        ctx.is_causal = is_causal
-        ctx.exact_streaming = exact_streaming
-        ctx.deterministic = deterministic
-        return out, softmax_lse, S_dmask
+        if is_grad:
+            ctx.save_for_backward(q, k, v,
+                                out, S_dmask, softmax_lse,
+                                cu_seqlens_q, cu_seqlens_k,
+                                head_mask_type,
+                                streaming_info,
+                                base_blockmask,
+                                rng_state)
+            # ctx.is_blocksparse = is_blocksparse
+            ctx.m_block_dim = m_block_dim
+            ctx.n_block_dim = n_block_dim
+            ctx.window_size_left = window_size_left
+            ctx.window_size_right = window_size_right
+            ctx.max_seqlen_q_ = max_seqlen_q_
+            ctx.max_seqlen_k_ = max_seqlen_k_
+            ctx.p_dropout = p_dropout
+            ctx.softmax_scale = softmax_scale
+            ctx.is_causal = is_causal
+            ctx.exact_streaming = exact_streaming
+            ctx.deterministic = deterministic
+        return out if not return_softmax else (out, softmax_lse, S_dmask)
 
     @staticmethod
     def backward(ctx, dout, *args):
-        q, k, v, out, softmax_lse, cu_seqlens_q, cu_seqlens_k, head_mask_type, streaming_info, base_blockmask, rng_state = ctx.saved_tensors
+        q, k, v, out, S_dmask, softmax_lse, cu_seqlens_q, cu_seqlens_k, head_mask_type, streaming_info, base_blockmask, rng_state = ctx.saved_tensors
         dq, dk, dv = torch.empty_like(q), torch.empty_like(k), torch.empty_like(v)
-        
         # S_dmask is None, temporarily use another tensor just to get it running
+        head_size_og = dout.size(2)
+        dout_padded = dout
+        if head_size_og % 8 != 0:
+            dout_padded = torch.nn.functional.pad(dout, [0, 8 - head_size_og % 8])
         if base_blockmask is not None:
             col_blockmask = convert_blockmask_col_reverse(base_blockmask, ctx.is_causal)
         else:
             col_blockmask = None
-        
+            
         assert not ctx.exact_streaming, "Exact streaming not supported in backward pass"
-        
-        dq, dk, dv, _ = _block_sparse_attn_backward(
-            dout,
+            
+        _wrapped_block_sparse_attn_backward(
+            dout_padded,
             q, k, v,
             out,
             softmax_lse,
@@ -372,7 +445,7 @@ class BlockSparseAttnFunWithS(torch.autograd.Function):
         dk = dk[..., : dout.shape[-1]]
         dv = dv[..., : dout.shape[-1]]
         
-        return dq, dk, dv, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None
+        return dq, dk, dv, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None
 
 
 def block_sparse_attn_func(
@@ -394,9 +467,8 @@ def block_sparse_attn_func(
         assert base_blockmask.shape[1] == blocksparse_head_num
     
     """dropout_p should be set to 0.0 during evaluation"""
-    # print("is_causal0: ", is_causal)
-    func = BlockSparseAttnFun if not return_attn_probs else BlockSparseAttnFunWithS
-    return func.apply(
+    
+    return BlockSparseAttnFunc.apply(
                 q, k, v,
                 cu_seqlens_q, cu_seqlens_k,
                 128, 128,
@@ -410,7 +482,8 @@ def block_sparse_attn_func(
                 exact_streaming,
                 return_attn_probs,
                 -1, -1,
-                deterministic
+                deterministic,
+                torch.is_grad_enabled()
                 )
     
     
@@ -426,8 +499,7 @@ def token_streaming_attn_func(
 ):
     """dropout_p should be set to 0.0 during evaluation"""
     # print("is_causal0: ", is_causal)
-    func = BlockSparseAttnFun if not return_attn_probs else BlockSparseAttnFunWithS
-    return func.apply(
+    return BlockSparseAttnFunc.apply(
                 q, k, v,
                 cu_seqlens_q, cu_seqlens_k,
                 128, 128,
@@ -441,7 +513,8 @@ def token_streaming_attn_func(
                 True,
                 return_attn_probs,
                 -1, -1,
-                deterministic
+                deterministic,
+                torch.is_grad_enabled()
                 )
     
 def block_streaming_attn_func(
@@ -458,8 +531,7 @@ def block_streaming_attn_func(
 ):
     """dropout_p should be set to 0.0 during evaluation"""
     # print("is_causal0: ", is_causal)
-    func = BlockSparseAttnFun if not return_attn_probs else BlockSparseAttnFunWithS
-    return func.apply(
+    return BlockSparseAttnFunc.apply(
                 q, k, v,
                 cu_seqlens_q, cu_seqlens_k,
                 128, 128,
@@ -473,5 +545,6 @@ def block_streaming_attn_func(
                 False,
                 return_attn_probs,
                 -1, -1,
-                deterministic
+                deterministic,
+                torch.is_grad_enabled()
                 )

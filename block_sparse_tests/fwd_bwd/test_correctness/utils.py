@@ -5,7 +5,7 @@ import torch
 import torch.nn.functional as F
 from einops import rearrange, repeat
 from block_sparse_attn.bert_padding import pad_input, unpad_input
-from block_sparse_attn.flash_attn_interface import _get_block_size
+from block_sparse_attn.block_sparse_attn_interface import _get_block_size
 torch.set_printoptions(profile="full")
 
 
