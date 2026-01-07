@@ -15,3 +15,5 @@ from block_sparse_attn.block_sparse_attn_interface import (
     token_streaming_attn_func,
     block_streaming_attn_func,
 )
+
+from . import utils
