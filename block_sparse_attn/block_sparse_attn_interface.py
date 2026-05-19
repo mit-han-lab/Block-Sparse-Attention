@@ -1,8 +1,49 @@
 # Adapted from https://github.com/Dao-AILab/flash-attention/blob/main/flash_attn/flash_blocksparse_attn_interface.py
 
-import block_sparse_attn_cuda
 import torch
 import torch.nn as nn
+from typing import Optional, Tuple
+
+is_rocm = torch.version.hip is not None
+if is_rocm:
+    import ctypes
+    import os
+    import subprocess
+    hsa_loaded = False
+    try:
+        rocm_path = subprocess.check_output(['hipconfig', '-R'], universal_newlines=True).strip()
+        if 'opt/rocm' in rocm_path:
+            parts = rocm_path.split(os.sep)
+            for part in parts:
+                if part.startswith('rocm-'):
+                    real_rocm = os.path.join('/opt', part)
+                    for lib_name in ['libhsa-runtime64.so.1', 'libhsa-runtime64.so']:
+                        p = os.path.join(real_rocm, 'lib', lib_name)
+                        if os.path.exists(p):
+                            try:
+                                ctypes.CDLL(p, mode=ctypes.RTLD_GLOBAL)
+                                hsa_loaded = True
+                                break
+                            except Exception:
+                                pass
+                if hsa_loaded:
+                    break
+    except Exception:
+        pass
+    
+    if not hsa_loaded:
+        for p in ['/opt/rocm/lib/libhsa-runtime64.so.1', '/opt/rocm/lib/libhsa-runtime64.so']:
+            if os.path.exists(p):
+                try:
+                    ctypes.CDLL(p, mode=ctypes.RTLD_GLOBAL)
+                    break
+                except Exception:
+                    pass
+                    
+if not is_rocm:
+    import block_sparse_attn_cuda
+else:
+    block_sparse_attn_cuda = None
 from typing import Optional, Tuple
 
 
@@ -365,22 +406,43 @@ class BlockSparseAttnFunc(torch.autograd.Function):
             assert streaming_info is not None
             assert is_causal
         
-        out, softmax_lse, S_dmask, rng_state = _wrapped_block_sparse_attn_forward(
-            q, k, v,
-            cu_seqlens_q, cu_seqlens_k,
-            m_block_dim, n_block_dim,
-            head_mask_type,
-            streaming_info,
-            row_blockmask,
-            max_seqlen_q_, max_seqlen_k_,
-            p_dropout,
-            softmax_scale,
-            is_causal,
-            exact_streaming,
-            return_softmax=return_softmax and p_dropout > 0,
-            window_size_left=window_size_left,
-            window_size_right=window_size_right
-        )
+        is_rocm = torch.version.hip is not None
+        
+        if is_rocm:
+            from block_sparse_attn.triton_backend import triton_block_sparse_attn_fwd
+            out, softmax_lse = triton_block_sparse_attn_fwd(
+                q, k, v,
+                cu_seqlens_q, cu_seqlens_k,
+                m_block_dim, n_block_dim,
+                head_mask_type,
+                streaming_info,
+                row_blockmask,
+                max_seqlen_q_, max_seqlen_k_,
+                p_dropout,
+                softmax_scale,
+                is_causal,
+                exact_streaming,
+            )
+            batch_size = cu_seqlens_q.shape[0] - 1
+            S_dmask = torch.zeros((batch_size, q.shape[1], max_seqlen_q_, max_seqlen_k_), dtype=q.dtype, device=q.device)
+            rng_state = torch.empty((2,), dtype=torch.int64, device=q.device)
+        else:
+            out, softmax_lse, S_dmask, rng_state = _wrapped_block_sparse_attn_forward(
+                q, k, v,
+                cu_seqlens_q, cu_seqlens_k,
+                m_block_dim, n_block_dim,
+                head_mask_type,
+                streaming_info,
+                row_blockmask,
+                max_seqlen_q_, max_seqlen_k_,
+                p_dropout,
+                softmax_scale,
+                is_causal,
+                exact_streaming,
+                return_softmax=return_softmax and p_dropout > 0,
+                window_size_left=window_size_left,
+                window_size_right=window_size_right
+            )
         if is_grad:
             ctx.save_for_backward(q, k, v,
                                 out, S_dmask, softmax_lse,

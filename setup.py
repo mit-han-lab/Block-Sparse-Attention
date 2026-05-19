@@ -44,6 +44,9 @@ BASE_WHEEL_URL = (
 # SKIP_CUDA_BUILD: Intended to allow CI to use a simple `python setup.py sdist` run to copy over raw files, without any cuda compilation
 FORCE_BUILD = os.getenv("BLOCK_SPARSE_ATTN_FORCE_BUILD", "FALSE") == "TRUE"
 SKIP_CUDA_BUILD = os.getenv("BLOCK_SPARSE_ATTN_SKIP_CUDA_BUILD", "FALSE") == "TRUE"
+is_rocm = torch.version.hip is not None
+if is_rocm:
+    SKIP_CUDA_BUILD = True
 # For CI, we want the option to build with C++11 ABI since the nvcr images use C++11 ABI
 FORCE_CXX11_ABI = os.getenv("BLOCK_SPARSE_ATTN_FORCE_CXX11_ABI", "FALSE") == "TRUE"
 @functools.lru_cache(maxsize=None)

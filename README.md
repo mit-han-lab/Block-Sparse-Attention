@@ -8,6 +8,11 @@ We release the implementation of Block Sparse Attention, which is initially modi
 
 ## News
 
+- [2026/05] We release the AMD ROCm/HIP support:
+  - Added full out-of-the-box Triton-based high-performance engine routing for AMD GPUs (such as Radeon RX 7900 XTX / GFX1100).
+  - Implemented exact streaming attention (token granularity) and varlen causal time-step alignment.
+  - Zero-compile installation: Automatically bypasses C++/CUDA extensions building on ROCm systems.
+
 - [2025/12] We updated the implementation:
   - Support running on Hopper (H100) and Blackwell (B200) GPUs.
   - Clean up Flash Attention supported features.
@@ -126,15 +131,20 @@ The graph above demonstrates the performance of our kernel for this specified wo
 
 Requirements:
 
-- CUDA 11.6 and above.
-- PyTorch 1.12 and above.
-- Linux.
+- **NVIDIA Platforms:** CUDA 11.6 and above, Ampere/Ada/Hopper GPUs, PyTorch 1.12+.
+- **AMD Platforms:** ROCm 6.0 and above, RDNA3/CDNA GPUs (e.g., gfx1100 / Radeon RX 7900 XTX), PyTorch ROCm version.
+- **Triton:** Required for AMD ROCm platforms.
+- Linux OS.
 
 ```sh
-pip install packaging
-pip install ninja
+# Install build dependencies
+pip install packaging ninja triton
+
+# Install the library
 python setup.py install
 ```
+
+*Note: On AMD ROCm platforms, the installation process automatically detects the ROCm environment, disables C++/CUDA compilation, and defaults to the high-performance Triton-based backend out of the box, requiring zero compilation steps.*
 
 Block Sparse Interface: `block_sparse_attn/block_sparse_attn_interface.py`
 
