@@ -43,7 +43,7 @@ class fwdStreaming: public fwdIteratorBase{
     };
 
     __device__ int mask_val(int block_col_idx) const {
-        if (block_col_idx > max_block_idx || block_col_idx < 0){
+        if (block_col_idx >= max_block_idx || block_col_idx < 0){
             return -1;
         };
         int ret = 0;
@@ -125,7 +125,7 @@ class fwdExactStreaming: public fwdIteratorBase{
     };
 
     __device__ int mask_val(int block_col_idx) const {
-        if (block_col_idx > max_block_idx || block_col_idx < 0){
+        if (block_col_idx >= max_block_idx || block_col_idx < 0){
             return -1;
         };
         int ret = 0;
@@ -193,7 +193,7 @@ class fwdBlockmask: public fwdIteratorBase{
     };
 
     __device__ int mask_val(int block_col_idx) const {
-        if (block_col_idx > max_block_idx || block_col_idx < 0){
+        if (block_col_idx >= max_block_idx || block_col_idx < 0){
             return -1;
         };
         int real_block_idx = block_col_idx / col_factor;
@@ -313,7 +313,7 @@ struct bwdStreaming: public bwdIteratorBase{
     };
 
     __device__ int mask_val(int block_row_idx) const {
-        if (block_row_idx > max_block_idx || block_row_idx < 0){
+        if (block_row_idx >= max_block_idx || block_row_idx < 0){
             return -1;
         };
         int ret = start_block_val - 1 - block_row_idx;
@@ -367,7 +367,7 @@ struct bwdBlockmask: public bwdIteratorBase{
     };
 
     __device__ int mask_val(int block_row_idx) const {
-        if (block_row_idx > max_block_idx || block_row_idx < 0){
+        if (block_row_idx >= max_block_idx || block_row_idx < 0){
             return -1;
         };
         int real_block_idx = block_row_idx / row_factor;
